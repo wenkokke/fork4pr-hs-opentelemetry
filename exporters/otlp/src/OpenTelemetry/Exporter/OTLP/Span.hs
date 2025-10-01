@@ -85,6 +85,7 @@ import qualified Proto.Opentelemetry.Proto.Common.V1.Common_Fields as Common_Fie
 import Proto.Opentelemetry.Proto.Trace.V1.Trace
 import qualified Proto.Opentelemetry.Proto.Trace.V1.Trace_Fields as Trace_Fields
 import System.Environment
+import qualified System.IO as IO
 import Text.Read (readMaybe)
 
 
@@ -168,15 +169,9 @@ loadExporterEnvironmentVariables = liftIO $ do
     <*>
     -- TODO lookupEnv "OTEL_EXPORTER_OTLP_METRICS_TIMEOUT" <*>
     pure Nothing
-    <*>
-    -- TODO lookupEnv "OTEL_EXPORTER_OTLP_PROTOCOL" <*>
-    pure Nothing
-    <*>
-    -- TODO lookupEnv "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL" <*>
-    pure Nothing
-    <*>
-    -- TODO lookupEnv "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL"
-    pure Nothing
+    <*> (traverse readProtocol =<< lookupEnv "OTEL_EXPORTER_OTLP_PROTOCOL")
+    <*> (traverse readProtocol =<< lookupEnv "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL")
+    <*> (traverse readProtocol =<< lookupEnv "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL")
   where
     decodeHeaders hsString = case Baggage.decodeBaggageHeader $ C.pack hsString of
       Left _ -> mempty
@@ -193,10 +188,25 @@ data CompressionFormat = None | GZip
 {- |
 The OpenTelemetry Protocol. Either HTTP/Protobuf or gRPC.
 
-Note: gRPC and HTTP/JSON will likely be supported eventually, but not yet.
+Note: HTTP/JSON will likely be supported eventually, but not yet.
 -}
-data Protocol {- GRpc | HttpJson | -}
+data Protocol {- HttpJson | -}
   = HttpProtobuf
+  | GRpc
+
+
+{- |
+Internal helper.
+Read a `Protocol` from a `String`.
+Defaults to `HttpProtobuf` for unsupported values.
+-}
+readProtocol :: (MonadIO m) => String -> m Protocol
+readProtocol = \case
+  "grpc" -> pure GRpc
+  "http/protobuf" -> pure HttpProtobuf
+  protocol -> do
+    putWarningLn $ "Warning: unsupported protocol '" <> protocol <> "'"
+    pure HttpProtobuf
 
 
 {- |
@@ -211,6 +221,14 @@ The default OTLP gRPC endpoint.
 -}
 otlpExporterGRpcEndpoint :: C.ByteString
 otlpExporterGRpcEndpoint = "http://localhost:4317"
+
+
+{- |
+Internal helper.
+Print a warning to stderr
+-}
+putWarningLn :: (MonadIO m) => String -> m ()
+putWarningLn = liftIO . IO.hPutStrLn IO.stderr
 
 
 --------------------------------------------------------------------------------
