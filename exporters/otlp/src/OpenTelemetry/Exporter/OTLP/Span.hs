@@ -142,15 +142,9 @@ loadExporterEnvironmentVariables = liftIO $ do
     <*> (traverse readCompressionFormat =<< lookupEnv "OTEL_EXPORTER_OTLP_COMPRESSION")
     <*> (traverse readCompressionFormat =<< lookupEnv "OTEL_EXPORTER_OTLP_TRACES_COMPRESSION")
     <*> (traverse readCompressionFormat =<< lookupEnv "OTEL_EXPORTER_OTLP_METRICS_COMPRESSION")
-    <*>
-    -- TODO lookupEnv "OTEL_EXPORTER_OTLP_TIMEOUT" <*>
-    pure Nothing
-    <*>
-    -- TODO lookupEnv "OTEL_EXPORTER_OTLP_TRACES_TIMEOUT" <*>
-    pure Nothing
-    <*>
-    -- TODO lookupEnv "OTEL_EXPORTER_OTLP_METRICS_TIMEOUT" <*>
-    pure Nothing
+    <*> (traverse readTimeout =<< lookupEnv "OTEL_EXPORTER_OTLP_TIMEOUT")
+    <*> (traverse readTimeout =<< lookupEnv "OTEL_EXPORTER_OTLP_TRACES_TIMEOUT")
+    <*> (traverse readTimeout =<< lookupEnv "OTEL_EXPORTER_OTLP_METRICS_TIMEOUT")
     <*> (traverse readProtocol =<< lookupEnv "OTEL_EXPORTER_OTLP_PROTOCOL")
     <*> (traverse readProtocol =<< lookupEnv "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL")
     <*> (traverse readProtocol =<< lookupEnv "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL")
@@ -205,6 +199,27 @@ readProtocol = \case
   protocol -> do
     putWarningLn $ "Warning: unsupported protocol '" <> protocol <> "'"
     pure HttpProtobuf
+
+
+{- |
+Internal helper.
+Read a timeout from a `String`.
+-}
+readTimeout :: (MonadIO m) => String -> m Int
+readTimeout timeout =
+  case readMaybe timeout of
+    Just timeoutInt | timeoutInt >= 0 -> pure timeoutInt
+    _otherwise -> do
+      putWarningLn $ "Warning: unsupported timeout '" <> timeout <> "'"
+      pure defaultExporterTimeout
+
+
+{- |
+Internal helper.
+The default OTLP timeout in milliseconds.
+-}
+defaultExporterTimeout :: Int
+defaultExporterTimeout = 10_000
 
 
 {- |
