@@ -37,14 +37,16 @@ build.all.stack-9.2:
 build.all.cabal-9.0:
 	cabal build --jobs --enable-tests --enable-benchmarks all
 
+# !!! THIS CHANGE IS FOR LOCAL DEVELOPMENT ONLY AND SHOULD NOT BE MERGED
 # format requires fourmolu 0.13.1.0 or later
 .PHONY: format
 format:
-	fourmolu --mode inplace $$(git ls-files '*.hs' ':!:otlp/' ':!:semantic-conventions/src/OpenTelemetry/SemanticConventions.hs')
+	fourmolu-0.15.0.0 --mode inplace $$(git ls-files '*.hs' ':!:otlp/' ':!:semantic-conventions/src/OpenTelemetry/SemanticConventions.hs')
 
+# !!! THIS CHANGE IS FOR LOCAL DEVELOPMENT ONLY AND SHOULD NOT BE MERGED
 .PHONY: format.check
 format.check:
-	fourmolu --mode check $$(git ls-files '*.hs' ':!:otlp/' ':!:semantic-conventions/src/OpenTelemetry/SemanticConventions.hs')
+	fourmolu-0.15.0.0 --mode check $$(git ls-files '*.hs' ':!:otlp/' ':!:semantic-conventions/src/OpenTelemetry/SemanticConventions.hs')
 
 
 # Hack https://www.gnu.org/software/make/manual/html_node/Force-Targets.html
