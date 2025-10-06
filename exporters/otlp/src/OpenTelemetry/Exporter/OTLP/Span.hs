@@ -186,8 +186,9 @@ The OpenTelemetry Protocol. Either HTTP/Protobuf or gRPC.
 
 Note: gRPC and HTTP/JSON will likely be supported eventually, but not yet.
 -}
-data Protocol {- GRpc | HttpJson | -}
+data Protocol {- HttpJson | -}
   = HttpProtobuf
+  | GRpc
 
 
 {- |
@@ -198,6 +199,7 @@ Defaults to `HttpProtobuf` for unsupported values.
 readProtocol :: (MonadIO m) => String -> m Protocol
 readProtocol protocol =
   protocol & fmap toLower & \case
+    "grpc" -> pure GRpc
     "http/protobuf" -> pure HttpProtobuf
     _ -> do
       putWarningLn $ "Warning: unsupported protocol '" <> protocol <> "'"
