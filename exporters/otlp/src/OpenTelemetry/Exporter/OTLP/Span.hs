@@ -38,18 +38,8 @@ module OpenTelemetry.Exporter.OTLP.Span (
   -- * Initializing the exporter
   otlpExporter,
 
-  -- * Configuring the exporter
-  OTLPExporterConfig (..),
-  CompressionFormat (..),
-  Protocol (..),
-  loadExporterEnvironmentVariables,
-
   -- * Errors
   ExportTraceError (..), -- only when using gRPC
-
-  -- * Default local endpoints
-  otlpExporterHttpEndpoint,
-  otlpExporterGRpcEndpoint,
 ) where
 
 import Codec.Compression.GZip
@@ -61,8 +51,6 @@ import Control.Monad.IO.Class
 import Data.Bits (shiftL)
 import qualified Data.ByteString.Char8 as C
 import qualified Data.ByteString.Lazy as L
-import qualified Data.CaseInsensitive as CI
-import Data.Char (toLower)
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as H
 import Data.Int (Int64)
@@ -71,7 +59,6 @@ import Data.ProtoLens.Encoding
 import Data.ProtoLens.Message
 import Data.Text (Text)
 import qualified Data.Text as T
-import qualified Data.Text.Encoding as T
 import Data.Vector (Vector)
 import qualified Data.Vector as V
 import qualified Data.Vector as Vector
@@ -88,8 +75,7 @@ import Network.HTTP.Types.Header
 import Network.HTTP.Types.Status
 import Network.URI (URI (uriAuthority), URIAuth (..), parseURI)
 import OpenTelemetry.Attributes
-import qualified OpenTelemetry.Baggage as Baggage
-import OpenTelemetry.Environment
+import OpenTelemetry.Exporter.OTLP.Config (CompressionFormat (..), OTLPExporterConfig (..), Protocol (..), otlpExporterTimeoutMilli)
 import OpenTelemetry.Exporter.Span
 import OpenTelemetry.Resource
 import OpenTelemetry.Trace.Core (ImmutableSpan, InstrumentationLibrary, timestampNanoseconds)
@@ -102,7 +88,6 @@ import Proto.Opentelemetry.Proto.Common.V1.Common
 import qualified Proto.Opentelemetry.Proto.Common.V1.Common_Fields as Common_Fields
 import Proto.Opentelemetry.Proto.Trace.V1.Trace
 import qualified Proto.Opentelemetry.Proto.Trace.V1.Trace_Fields as Trace_Fields
-import System.Environment
 import qualified System.IO as IO
 import Text.Read (readMaybe)
 
@@ -113,161 +98,6 @@ otlpExporter conf =
   case otlpProtocol conf <|> otlpTracesProtocol conf of
     Just GRpc -> grpcOtlpExporter conf
     _otherwise -> httpOtlpExporter conf
-
-
---------------------------------------------------------------------------------
--- OTLP Exporter configuration.
---------------------------------------------------------------------------------
-
-data OTLPExporterConfig = OTLPExporterConfig
-  { otlpEndpoint :: Maybe String
-  , otlpTracesEndpoint :: Maybe String
-  , otlpMetricsEndpoint :: Maybe String
-  , otlpInsecure :: Bool
-  , otlpSpanInsecure :: Bool
-  , otlpMetricInsecure :: Bool
-  , otlpCertificate :: Maybe FilePath
-  , otlpTracesCertificate :: Maybe FilePath
-  , otlpMetricCertificate :: Maybe FilePath
-  , otlpHeaders :: Maybe [Header]
-  , otlpTracesHeaders :: Maybe [Header]
-  , otlpMetricsHeaders :: Maybe [Header]
-  , otlpCompression :: Maybe CompressionFormat
-  , otlpTracesCompression :: Maybe CompressionFormat
-  , otlpMetricsCompression :: Maybe CompressionFormat
-  , otlpTimeout :: Maybe Int
-  -- ^ Measured in milliseconds.
-  , otlpTracesTimeout :: Maybe Int
-  -- ^ Measured in milliseconds.
-  , otlpMetricsTimeout :: Maybe Int
-  -- ^ Measured in milliseconds.
-  , otlpProtocol :: Maybe Protocol
-  , otlpTracesProtocol :: Maybe Protocol
-  , otlpMetricsProtocol :: Maybe Protocol
-  }
-
-
-loadExporterEnvironmentVariables :: (MonadIO m) => m OTLPExporterConfig
-loadExporterEnvironmentVariables = liftIO $ do
-  OTLPExporterConfig
-    <$> lookupEnv "OTEL_EXPORTER_OTLP_ENDPOINT"
-    <*> lookupEnv "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"
-    <*> lookupEnv "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT"
-    <*> lookupBooleanEnv "OTEL_EXPORTER_OTLP_INSECURE"
-    <*> lookupBooleanEnv "OTEL_EXPORTER_OTLP_SPAN_INSECURE"
-    <*> lookupBooleanEnv "OTEL_EXPORTER_OTLP_METRIC_INSECURE"
-    <*> lookupEnv "OTEL_EXPORTER_OTLP_CERTIFICATE"
-    <*> lookupEnv "OTEL_EXPORTER_OTLP_TRACES_CERTIFICATE"
-    <*> lookupEnv "OTEL_EXPORTER_OTLP_METRICS_CERTIFICATE"
-    <*> (fmap decodeHeaders <$> lookupEnv "OTEL_EXPORTER_OTLP_HEADERS")
-    <*> (fmap decodeHeaders <$> lookupEnv "OTEL_EXPORTER_OTLP_TRACES_HEADERS")
-    <*> (fmap decodeHeaders <$> lookupEnv "OTEL_EXPORTER_OTLP_METRICS_HEADERS")
-    <*> (traverse readCompressionFormat =<< lookupEnv "OTEL_EXPORTER_OTLP_COMPRESSION")
-    <*> (traverse readCompressionFormat =<< lookupEnv "OTEL_EXPORTER_OTLP_TRACES_COMPRESSION")
-    <*> (traverse readCompressionFormat =<< lookupEnv "OTEL_EXPORTER_OTLP_METRICS_COMPRESSION")
-    <*> (traverse readTimeout =<< lookupEnv "OTEL_EXPORTER_OTLP_TIMEOUT")
-    <*> (traverse readTimeout =<< lookupEnv "OTEL_EXPORTER_OTLP_TRACES_TIMEOUT")
-    <*> (traverse readTimeout =<< lookupEnv "OTEL_EXPORTER_OTLP_METRICS_TIMEOUT")
-    <*> (traverse readProtocol =<< lookupEnv "OTEL_EXPORTER_OTLP_PROTOCOL")
-    <*> (traverse readProtocol =<< lookupEnv "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL")
-    <*> (traverse readProtocol =<< lookupEnv "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL")
-  where
-    decodeHeaders hsString = case Baggage.decodeBaggageHeader $ C.pack hsString of
-      Left _ -> mempty
-      Right baggageFmt ->
-        (\(k, v) -> (CI.mk $ Baggage.tokenValue k, T.encodeUtf8 $ Baggage.value v)) <$> H.toList (Baggage.values baggageFmt)
-
-
-{- |
-The OpenTelemetry Protocol Compression Format.
--}
-data CompressionFormat
-  = None
-  | GZip
-
-
-{- |
-Internal helper.
-Read the `CompressionFormat` from a `String`.
-Defaults to `None` for unsupported values.
--}
-readCompressionFormat :: (MonadIO m) => String -> m CompressionFormat
-readCompressionFormat compressionFormat =
-  compressionFormat & fmap toLower & \case
-    "gzip" -> pure GZip
-    "none" -> pure None
-    _ -> do
-      putWarningLn $ "Warning: unsupported compression format '" <> compressionFormat <> "'"
-      pure None
-
-
-{- |
-The OpenTelemetry Protocol. Either HTTP/Protobuf or gRPC.
-
-Note: HTTP/JSON will likely be supported eventually, but not yet.
--}
-data Protocol {- HttpJson | -}
-  = HttpProtobuf
-  | GRpc
-
-
-{- |
-Internal helper.
-Read a `Protocol` from a `String`.
-Defaults to `HttpProtobuf` for unsupported values.
--}
-readProtocol :: (MonadIO m) => String -> m Protocol
-readProtocol protocol =
-  protocol & fmap toLower & \case
-    "grpc" -> pure GRpc
-    "http/protobuf" -> pure HttpProtobuf
-    _ -> do
-      putWarningLn $ "Warning: unsupported protocol '" <> protocol <> "'"
-      pure HttpProtobuf
-
-
-{- |
-Internal helper.
-Read a timeout from a `String`.
--}
-readTimeout :: (MonadIO m) => String -> m Int
-readTimeout timeout =
-  case readMaybe timeout of
-    Just timeoutInt | timeoutInt >= 0 -> pure timeoutInt
-    _otherwise -> do
-      putWarningLn $ "Warning: unsupported timeout '" <> timeout <> "'"
-      pure defaultExporterTimeout
-
-
-{- |
-Internal helper.
-The default OTLP timeout in milliseconds.
--}
-defaultExporterTimeout :: Int
-defaultExporterTimeout = 10_000
-
-
-{- |
-The default OTLP HTTP endpoint.
--}
-otlpExporterHttpEndpoint :: C.ByteString
-otlpExporterHttpEndpoint = "http://localhost:4318"
-
-
-{- |
-The default OTLP gRPC endpoint.
--}
-otlpExporterGRpcEndpoint :: C.ByteString
-otlpExporterGRpcEndpoint = "http://localhost:4317"
-
-
-{- |
-Internal helper.
-Print a warning to stderr
--}
-putWarningLn :: (MonadIO m) => String -> m ()
-putWarningLn = liftIO . IO.hPutStrLn IO.stderr
-
 
 --------------------------------------------------------------------------------
 -- OTLP Exporter using gRPC.
@@ -371,7 +201,7 @@ grpcTimeout conf =
     Just timeoutMilli
       | timeoutMilli >= 1 -> toTimeout timeoutMilli
       | timeoutMilli == 0 -> Nothing
-    _otherwise -> toTimeout defaultExporterTimeout
+    _otherwise -> toTimeout otlpExporterTimeoutMilli
   where
     toTimeout :: Int -> Maybe G.Timeout
     toTimeout = Just . G.Timeout G.Millisecond . G.TimeoutValue . fromIntegral
@@ -553,7 +383,7 @@ httpTracesResponseTimeout conf = case otlpTracesTimeout conf <|> otlpTimeout con
   Just timeoutMilli
     | timeoutMilli == 0 -> responseTimeoutNone
     | timeoutMilli >= 1 -> responseTimeoutMilli timeoutMilli
-  _otherwise -> responseTimeoutMilli defaultExporterTimeout
+  _otherwise -> responseTimeoutMilli otlpExporterTimeoutMilli
   where
     responseTimeoutMilli :: Int -> ResponseTimeout
     responseTimeoutMilli = responseTimeoutMicro . (* 1_000)
@@ -811,3 +641,11 @@ attributesToProto =
                     & Common_Fields.arrayValue
                       .~ (defMessage & Common_Fields.values .~ fmap primAttributeToAnyValue a)
              )
+
+
+{- |
+Internal helper.
+Print a warning to stderr
+-}
+putWarningLn :: (MonadIO m) => String -> m ()
+putWarningLn = liftIO . IO.hPutStrLn IO.stderr
