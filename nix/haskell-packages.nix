@@ -1,6 +1,7 @@
 {
   lib,
   pkgs,
+  all-cabal-hashes,
   ...
 }: let
   inherit
@@ -57,7 +58,7 @@ in rec {
   extendedPackageSetByGHCVersions = listToAttrs (
     map (ghcVersion: {
       name = ghcVersion;
-      value = pkgs.haskell.packages.${ghcVersion}.extend (final: prev: localPackageCabalDerivations final // nixpkgsHaskellTweaks final prev);
+      value = (pkgs.haskell.packages.${ghcVersion}.override {all-cabal-hashes = all-cabal-hashes;}).extend (final: prev: localPackageCabalDerivations final // nixpkgsHaskellTweaks final prev);
       #value = pkgs.haskell.packages.${ghcVersion}.override {overrides = nixpkgsHaskellTweaks;};
     })
     supportedGHCVersions
@@ -100,6 +101,15 @@ in rec {
   nixpkgsHaskellTweaks = _final: prev: {
     # nixpkgs has 0.7.1.5, 0.7.1.6 relaxes bounds for 9.10, but we can also just
     # relax the bounds of 0.7.1.5 ourselves
-    proto-lens = pkgs.haskell.lib.compose.doJailbreak prev.proto-lens;
+    proto-lens = pkgs.haskell.lib.doJailbreak prev.proto-lens;
+    proto-lens-protoc = prev.callHackage "proto-lens-protoc" "0.9.0.0" {};
+    proto-lens-protobuf-types = pkgs.haskell.lib.doJailbreak prev.proto-lens-protobuf-types;
+    tls = prev.callHackage "tls" "2.1.4" {};
+    http2-tls = prev.callHackage "http2-tls" "0.4.5" {};
+    snappy-c = pkgs.haskell.lib.doJailbreak prev.snappy-c;
+    grapesy = pkgs.haskell.lib.dontCheck prev.grapesy;
+    http2 = prev.callHackage "http2" "5.3.9" {};
+    optparse-applicative = prev.callHackage "optparse-applicative" "0.19.0.0" {};
+    tasty-quickcheck = pkgs.haskell.lib.doJailbreak prev.tasty-quickcheck;
   };
 }
