@@ -104,12 +104,20 @@ in rec {
     proto-lens = pkgs.haskell.lib.doJailbreak prev.proto-lens;
     proto-lens-protoc = prev.callHackage "proto-lens-protoc" "0.9.0.0" {};
     proto-lens-protobuf-types = pkgs.haskell.lib.doJailbreak prev.proto-lens-protobuf-types;
-    tls = prev.callHackage "tls" "2.1.4" {};
-    http2-tls = prev.callHackage "http2-tls" "0.4.5" {};
-    snappy-c = pkgs.haskell.lib.doJailbreak prev.snappy-c;
-    grapesy = pkgs.haskell.lib.dontCheck prev.grapesy;
+    # Need a very new version of grapesy for now.
+    grapesy = pkgs.haskell.lib.dontCheck (prev.callHackage "grapesy" "1.1.1" {});
+
+    # Which requires this other new packages.
+    tls = 
+        pkgs.haskell.lib.overrideCabal
+	 (prev.callHackage "tls" "2.1.11" {})
+         (old: {
+            # This patch adds support for random-1.2 to tls-2.1.11
+            # https://github.com/haskell-tls/hs-tls/pull/508/commits/b76cc18fbcc6edaec27c6727377b603fa9cf59ae.patch
+            patches = (old.patches or []) ++ [./tls.patch];
+          });
+    http2-tls = prev.callHackage "http2-tls" "0.4.9" {};
+    crypton-x509-store = prev.callHackage "crypton-x509-store" "1.6.11" {};
     http2 = prev.callHackage "http2" "5.3.9" {};
-    optparse-applicative = prev.callHackage "optparse-applicative" "0.19.0.0" {};
-    tasty-quickcheck = pkgs.haskell.lib.doJailbreak prev.tasty-quickcheck;
   };
 }
