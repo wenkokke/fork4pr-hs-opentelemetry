@@ -108,14 +108,14 @@ in rec {
     grapesy = pkgs.haskell.lib.dontCheck (prev.callHackage "grapesy" "1.1.1" {});
 
     # Which requires this other new packages.
-    tls = 
-        pkgs.haskell.lib.overrideCabal
-	 (prev.callHackage "tls" "2.1.11" {})
-         (old: {
-            # This patch adds support for random-1.2 to tls-2.1.11
-            # https://github.com/haskell-tls/hs-tls/pull/508/commits/b76cc18fbcc6edaec27c6727377b603fa9cf59ae.patch
-            patches = (old.patches or []) ++ [./tls.patch];
-          });
+    tls =
+      pkgs.haskell.lib.overrideCabal
+      (prev.callHackage "tls" "2.1.11" {})
+      (old: {
+        # This patch adds support for random-1.2 to tls-2.1.11
+        # https://github.com/haskell-tls/hs-tls/pull/508/commits/b76cc18fbcc6edaec27c6727377b603fa9cf59ae.patch
+        patches = (old.patches or []) ++ [./tls.patch];
+      });
     http2-tls = prev.callHackage "http2-tls" "0.4.9" {};
     crypton-x509-store = prev.callHackage "crypton-x509-store" "1.6.11" {};
     http2 = prev.callHackage "http2" "5.3.9" {};
